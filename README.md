@@ -13,7 +13,7 @@ Eg: open the Anaconda Prompt and create a new conda environment
 with the dependency requirements:
 
 ```
-conda create bandpass-filter-env pip
+conda create -n bandpass-filter-env pip
 conda activate bandpass-filter-env
 pip install -r requirements.txt
 ```
