@@ -1,10 +1,11 @@
+from codecs import namereplace_errors
 import os
 import warnings
 
 from magicgui import magicgui
-from magicgui._qt import QSlider, QDoubleSpinBox, QSpinBox, QDoubleSpinBox
+from magicgui.widgets import SpinBox, FloatSpinBox
 import napari
-from napari.layers import Image
+from napari.types import ImageData
 import numpy as np
 import skimage.data
 import skimage.draw
@@ -35,10 +36,10 @@ def fourier_mask(image_shape,
     """
     bandpass_mask = np.zeros(image_shape)
     r, c = np.array(image_shape) / 2
-    inner_circle_rr, inner_circle_cc = skimage.draw.circle(
-        r, c, bandpass_inner_radius, shape=image_shape)
-    outer_circle_rr, outer_circle_cc = skimage.draw.circle(
-        r, c, bandpass_outer_radius, shape=image_shape)
+    inner_circle_rr, inner_circle_cc = skimage.draw.disk(
+        (r, c), bandpass_inner_radius, shape=image_shape)
+    outer_circle_rr, outer_circle_cc = skimage.draw.disk(
+        (r, c), bandpass_outer_radius, shape=image_shape)
     bandpass_mask[outer_circle_rr, outer_circle_cc] = 1.0
     bandpass_mask[inner_circle_rr, inner_circle_cc] = 0.0
     bandpass_mask = np.array(bandpass_mask)
@@ -54,36 +55,47 @@ def fourier_mask(image_shape,
 
 
 def main():
-    with napari.gui_qt():
-        viewer = napari.Viewer()
-        viewer.add_image(skimage.data.grass().astype('float'), name="grass")
 
-        @magicgui(
-            auto_call=True,
-            bandpass_inner_radius={"widget_type": QSpinBox, "maximum": 1000},
-            bandpass_outer_radius={"widget_type": QSpinBox, "maximum": 1000},
-            bandpass_sigma={"widget_type": QDoubleSpinBox, "maximum": 1000},
-        )
-        def bandpass_filter(layer: Image,
-                            bandpass_inner_radius: int = 0,
-                            bandpass_outer_radius: int = 75,
-                            bandpass_sigma: float = 1.0) -> Image:
-            if layer:
-                image = np.fft.fftn(layer.data)
-                mask = fourier_mask(layer.shape,
-                                    bandpass_outer_radius=bandpass_outer_radius,
-                                    bandpass_inner_radius=bandpass_inner_radius,
-                                    bandpass_sigma=bandpass_sigma)
-                image = np.fft.ifftn(mask * image)
-                return np.real(image)
+    viewer = napari.Viewer()
+    viewer.add_image(skimage.data.grass().astype('float'), name="grass")
 
-        # instantiate the widget
-        gui = bandpass_filter.Gui()
-        # add the gui to the viewer as a dock widget
-        viewer.window.add_dock_widget(gui)
-        # if a layer gets added or removed, refresh the dropdown choices
-        viewer.layers.events.changed.connect(lambda x: gui.refresh_choices("layer"))
+    @magicgui(
+        auto_call=True,
+        bandpass_inner_radius={"widget_type": "SpinBox", "max": 1000},
+        bandpass_outer_radius={"widget_type": "SpinBox", "max": 1000},
+        bandpass_sigma={"widget_type": "FloatSpinBox", "max": 1000},
+        comparison={"widget_type": "CheckBox"}
+    )
+    def bandpass_filter(image: ImageData,
+                        bandpass_inner_radius: int = 0,
+                        bandpass_outer_radius: int = 75,
+                        bandpass_sigma: float = 1.0,
+                        comparison: bool = False,
+                        ) -> ImageData:
+        if image is not None:
+            image = np.fft.fftn(image)
+            mask = fourier_mask(image.shape,
+                                bandpass_outer_radius=bandpass_outer_radius,
+                                bandpass_inner_radius=bandpass_inner_radius,
+                                bandpass_sigma=bandpass_sigma)
+            bandpass = np.fft.ifftn(mask * image)
+            if comparison is False:
+                return np.real(bandpass)
+            else:
+                cy, cx = image.shape[0] // 2, image.shape[1] // 2
+                bandpass = np.real(bandpass)
+                bandpass[:, :cx] = image[:, :cx]
+                return bandpass
+                
+    # instantiate the widget
+    # gui = bandpass_filter.Gui()
+    # add the gui to the viewer as a dock widget
+    viewer.window.add_dock_widget(bandpass_filter)
+    # if a layer gets added or removed, refresh the dropdown choices
+    viewer.layers.events.changed.connect(bandpass_filter.reset_choices)
 
+    # viewer = napari.Viewer()
+    napari.run()
 
 if __name__=="__main__":
     main()

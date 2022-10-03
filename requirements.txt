@@ -1,5 +1,5 @@
 magicgui
 napari
 numpy
-pyside2
+# pyside2
 scikit-image
